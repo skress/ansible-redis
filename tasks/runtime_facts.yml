@@ -43,6 +43,20 @@
   set_fact:
     redis_is_running: "{{ true if (redis_is_installed and redis_runtime_status_result.rc == 0) else false }}"
 
+- name: Runtime facts - check if sentinel running
+  shell:
+    executable: /bin/bash
+    cmd: "set -o pipefail && {{ redis_install_dir }}/bin/redis-cli -p {{ redis_sentinel_port }} {% if redis_password %}-a '{{ redis_password }}'{% endif %} ping | grep -i pong"
+  check_mode: no
+  changed_when: false
+  failed_when: false
+  register: redis_sentinel_runtime_status_result
+  when: redis_is_installed and redis_sentinel
+
+- name: Runtime facts - set_fact 'redis_sentinel_is_running'
+  set_fact:
+    redis_sentinel_is_running: "{{ true if (redis_is_installed and redis_sentinel_runtime_status_result.rc == 0) else false }}"
+
 - name: Runtime facts - (server) get replicaof
   shell: 
     executable: /bin/bash
@@ -75,16 +89,16 @@
   changed_when: false
   register: redis_runtime_sentinel_monitor_result
   loop: "{{ redis_sentinel_monitors }}"
-  when: redis_sentinel and redis_is_running
+  when: redis_sentinel and redis_sentinel_is_running
 
 - name: Runtime facts - (sentinel) set_fact 'redis_sentinel_runtime_monitors'
   set_fact:
     redis_sentinel_runtime_monitors: "{{ {} | combine( {item.name: item} ) }}"
   loop: "{{ redis_runtime_sentinel_monitor_result.results | map(attribute='stdout') | map('from_json') | list }}"
-  when: redis_sentinel and redis_is_running
+  when: redis_sentinel and redis_sentinel_is_running
 
 - name: Runtime facts - (sentinel) update fact 'redis_sentinel_monitors'
   set_fact:
     redis_sentinel_monitors: "{{ [] + [ item | combine( { 'host': redis_sentinel_runtime_monitors[item.name].ip, 'port': redis_sentinel_runtime_monitors[item.name].port, 'quorum': redis_sentinel_runtime_monitors[item.name].quorum }) ] }}"
   loop: "{{ redis_sentinel_monitors }}"
-  when: redis_sentinel and redis_is_running
+  when: redis_sentinel and redis_sentinel_is_running
